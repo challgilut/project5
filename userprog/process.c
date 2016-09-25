@@ -21,28 +21,60 @@
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
+static void get_name(char * cmd, char *name)
+{
+  char *ptr;
+  strlcpy (name, cmd, PGSIZE);
+  name = strtok_r(name, " ", &ptr);
+}
+
+static void get_args(char * cmd, char* argv[], int *argc)
+{
+  char *ptr;
+  argv[0] = strtok_r(cmd, " ", &ptr);
+  char *token;
+  *argc = 1;
+  while((token = strtok_r(NULL, " ", &ptr))!=NULL)
+  {
+    argv[(*argc)++] = token;
+  }
+}
+
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
-tid_t
-process_execute (const char *file_name) 
+process_execute (const char *file_name)
 {
-  char *fn_copy;
-  tid_t tid;
+    char *fn_copy;
+    tid_t tid;
+ 
+   /* Make a copy of FILE_NAME.
+      Otherwise there's a race between the caller and load(). */
+    fn_copy = palloc_get_page (0);
+    if (fn_copy == NULL)
+        return TID_ERROR;
+    strlcpy (fn_copy, file_name, PGSIZE);
 
-  /* Make a copy of FILE_NAME.
-     Otherwise there's a race between the caller and load(). */
-  fn_copy = palloc_get_page (0);
-  if (fn_copy == NULL)
-    return TID_ERROR;
-  strlcpy (fn_copy, file_name, PGSIZE);
+    struct semaphore sem;
+    sema_init(&sem,0);
+    int result = 0;
+    void *args[2];
+    args[0] = fn_copy;
+    args[1] = &sem;
+    args[2] = &result;
 
-  /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
-  if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
-  return tid;
+    /* Create a new thread to execute FILE_NAME. */
+    tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+    if (tid == TID_ERROR)
+        palloc_free_page (fn_copy); 
+    return tid;
+    tid = thread_create (file_name, PRI_DEFAULT, start_process, args);
+    if (tid == TID_ERROR){
+        palloc_free_page (fn_copy);
+        return -1;
+    }
+    return result;
 }
 
 /* A thread function that loads a user process and starts it
@@ -426,8 +458,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 /* Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
-static bool
-setup_stack (void **esp) 
+static bool setup_stack (void **esp, char **argv, int argc) 
 {
   uint8_t *kpage;
   bool success = false;
@@ -437,7 +468,33 @@ setup_stack (void **esp)
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
+      {
         *esp = PHYS_BASE;
+        int32_t i = argc - 1;
+        uint32_t *arg_ref[argc];
+        while(i > -1)
+        {
+            *esp = *esp - (strlen(argv[i]) + 1) * sizeof(char);
+            arg_ref[i] = (uint32_t*)*esp;
+            memcpy(*esp, argv[i], strlen(argv[i]) + 1);
+            i--;
+        }
+        *esp = *esp - 4;
+        (*(int32_t*)(*esp)) = 0;
+        i = argc - 1;
+        while(i > -1)
+        {
+            *esp = *esp - 4;
+            (*(uint32_t**)(*esp)) = arr[i];
+            i--;
+        }
+        *esp = *esp - 4;
+        (*(uintptr_t**)(*esp)) = *esp + 4;
+        *esp = *esp - 4;
+        *(int32_t*)(*esp) = argc;
+        *esp = *esp - 4;
+        (*(int32_t*)(*esp)) = 0;
+      }
       else
         palloc_free_page (kpage);
     }
