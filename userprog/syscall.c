@@ -58,6 +58,16 @@ void exit(int status)
   thread_exit();
 }
 
+/*Creates a new file called file initially initial_size bytes in size. Returns true if successful, false otherwise.
+* Creating a new file does not open it: opening the new file is a separate operation which would require a open
+* system call. 
+*/
+bool create(const char *file, unsigned initial_size)
+{
+  
+}
+
+
 void
 syscall_init (void) 
 {
@@ -102,7 +112,17 @@ syscall_handler (struct intr_frame *f)
     //wait(2);
   }
   else if(esp == 4){
-    //create(char *temp, 2);
+    for(i = 0; i < 4; i++)
+    {
+      if (!ptr_verification(f->esp + 4 + i) || !ptr_verification(f->esp + 8 + i)){
+        exit(-1);
+      }
+    }
+    char *name = *(char **)(f->esp + 4);
+    unsigned size = *(int *)(f->esp + 8);
+    if(name == NULL || strcmp(name, "") == 0)
+      exit(-1);
+    create(name, size);
   }
   else if(esp == 5){
     //remove(char *temp );
@@ -185,15 +205,6 @@ void halt(void)
 * retrieve its child's exit status, or learn that the child was terminated by the kernel.
 */
 int wait(tid_t pid)
-{
-
-}
-
-/*Creates a new file called file initially initial_size bytes in size. Returns true if successful, false otherwise.
-* Creating a new file does not open it: opening the new file is a separate operation which would require a open
-* system call. 
-*/
-bool create(const char *file, unsigned initial_size)
 {
 
 }
