@@ -70,14 +70,27 @@ static void
 syscall_handler (struct intr_frame *f) 
 {//need to change system call numbers
   //printf ("system call!\n");
-  if(!ptr_verification(f->esp))
-    exit(-1);
+  int i = 0;
+  for(; i < 4; i++)
+  {
+    if(!ptr_verification(f->esp + i))
+      exit(-1);
+}
   int esp =*(int*)(f->esp);
   if(esp == 0){
     //halt();
   }
   else if(esp == 1){
     int status;
+    for(i = 0; i < 4; i++)
+    {
+      if(!ptr_verification(f->esp + 4 + i))
+      {
+        exit(-1);
+        return;
+      }
+        
+    }
     status = *((int*)f->esp+1);
     exit(status);
   }
