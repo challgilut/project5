@@ -52,7 +52,8 @@ pid_t exec(const char *file){
 */
 void exit(int status)
 {
-//  printf("%c exit(%i)\n", , status);
+ // struct thread *t = 
+  printf("%s: exit(%i)\n", thread_current()->name, status);
   thread_exit();
 }
 
