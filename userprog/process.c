@@ -17,6 +17,12 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/synch.h"
+#include "threads/malloc.h"
+
+#define MAX_ARGS 30
+#define MAX_LENGTH 100
+
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -44,8 +50,7 @@ static void get_args(char * cmd, char* argv[], int *argc)
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
-<<<<<<< HEAD
-process_execute (const char *file_name)
+tid_t process_execute (const char *file_name)
 {
     char *fn_copy;
     tid_t tid;
@@ -57,55 +62,26 @@ process_execute (const char *file_name)
         return TID_ERROR;
     strlcpy (fn_copy, file_name, PGSIZE);
 
-    struct semaphore sem;
+   /* struct semaphore sem;
     sema_init(&sem,0);
     int result = 0;
     void *args[2];
     args[0] = fn_copy;
     args[1] = &sem;
     args[2] = &result;
-
+*/
     /* Create a new thread to execute FILE_NAME. */
     tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
     if (tid == TID_ERROR)
         palloc_free_page (fn_copy); 
     return tid;
-    tid = thread_create (file_name, PRI_DEFAULT, start_process, args);
-    if (tid == TID_ERROR){
-        palloc_free_page (fn_copy);
-        return -1;
-    }
-    return result;
-=======
-tid_t process_execute (const char *file_name) 
-{
-  char *fn_copy;
-  tid_t tid;
-
-  /* Make a copy of FILE_NAME.
-     Otherwise there's a race between the caller and load(). */
-  fn_copy = palloc_get_page (0);
-  if (fn_copy == NULL)
-    return TID_ERROR;
-  strlcpy (fn_copy, file_name, PGSIZE);
-
-  //MY CODE***
-  char* save;
-
-  file_name = strtok_r(file_name, " ", &save);
-  //END MY CODE***
-
-  /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
-  if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
-  return tid;
->>>>>>> 86798b5fa2664757a77badd71aeaa473b56a2e77
+    
 }
 
 /* A thread function that loads a user process and starts it
    running. */
-static void start_process (void *file_name_)
+static void
+start_process (void *file_name_)
 {
   char *file_name = file_name_;
   struct intr_frame if_;
@@ -139,19 +115,39 @@ static void start_process (void *file_name_)
    child of the calling process, or if process_wait() has already
    been successfully called for the given TID, returns -1
    immediately, without waiting.
-
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
-int process_wait (tid_t child_tid UNUSED) 
+int
+process_wait (tid_t child_tid) 
 {
+  struct process_wait *wait = malloc(sizeof(struct process_wait));
+  sema_init(&wait->sema, 0);
+  wait->waiting_for = child_tid;
+  list_push_back(&proc_wait_list, &(wait->elem));
+  sema_down(&wait->sema);
+
   return -1;
 }
 
 /* Free the current process's resources. */
-void process_exit (void)
+void
+process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+  struct list_elem *i;
+  for (i = list_begin(&proc_wait_list); i != list_end(&proc_wait_list); i = list_next(i))
+  {
+    if (list_entry(i, struct process_wait, elem)->waiting_for == thread_tid()){
+      break;
+    }
+  }
+  if (i != list_end (&proc_wait_list)){
+    struct process_wait * pw = list_entry(i, struct process_wait, elem);
+    sema_up (&(pw->sema));
+    list_remove(i);
+    free(pw);
+  }
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -174,7 +170,8 @@ void process_exit (void)
 /* Sets up the CPU for running user code in the current
    thread.
    This function is called on every context switch. */
-void process_activate (void)
+void
+process_activate (void)
 {
   struct thread *t = thread_current ();
 
@@ -249,7 +246,7 @@ struct Elf32_Phdr
 #define PF_W 2          /* Writable. */
 #define PF_R 4          /* Readable. */
 
-static bool setup_stack (void **esp);
+static bool setup_stack (void **esp, char **argv, int argc);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
@@ -259,7 +256,8 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
    Stores the executable's entry point into *EIP
    and its initial stack pointer into *ESP.
    Returns true if successful, false otherwise. */
-bool load (const char *file_name, void (**eip) (void), void **esp) 
+bool
+load (const char *file_name, void (**eip) (void), void **esp) 
 {
   struct thread *t = thread_current ();
   struct Elf32_Ehdr ehdr;
@@ -267,6 +265,12 @@ bool load (const char *file_name, void (**eip) (void), void **esp)
   off_t file_ofs;
   bool success = false;
   int i;
+
+  char fn_copy[MAX_LENGTH];
+  strlcpy(fn_copy, file_name, MAX_LENGTH);
+  char *argv[MAX_ARGS];
+  int argc;
+  get_args(fn_copy, argv, &argc);
 
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
@@ -355,7 +359,7 @@ bool load (const char *file_name, void (**eip) (void), void **esp)
     }
 
   /* Set up stack. */
-  if (!setup_stack (esp))
+  if (!setup_stack (esp, argv, argc))
     goto done;
 
   /* Start address. */
@@ -375,7 +379,8 @@ static bool install_page (void *upage, void *kpage, bool writable);
 
 /* Checks whether PHDR describes a valid, loadable segment in
    FILE and returns true if so, false otherwise. */
-static bool validate_segment (const struct Elf32_Phdr *phdr, struct file *file) 
+static bool
+validate_segment (const struct Elf32_Phdr *phdr, struct file *file) 
 {
   /* p_offset and p_vaddr must have the same page offset. */
   if ((phdr->p_offset & PGMASK) != (phdr->p_vaddr & PGMASK)) 
@@ -420,18 +425,15 @@ static bool validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
 /* Loads a segment starting at offset OFS in FILE at address
    UPAGE.  In total, READ_BYTES + ZERO_BYTES bytes of virtual
    memory are initialized, as follows:
-
         - READ_BYTES bytes at UPAGE must be read from FILE
           starting at offset OFS.
-
         - ZERO_BYTES bytes at UPAGE + READ_BYTES must be zeroed.
-
    The pages initialized by this function must be writable by the
    user process if WRITABLE is true, read-only otherwise.
-
    Return true if successful, false if a memory allocation error
    or disk read error occurs. */
-static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
+static bool
+load_segment (struct file *file, off_t ofs, uint8_t *upage,
               uint32_t read_bytes, uint32_t zero_bytes, bool writable) 
 {
   ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
@@ -477,11 +479,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 /* Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
-<<<<<<< HEAD
 static bool setup_stack (void **esp, char **argv, int argc) 
-=======
-static bool setup_stack (void **esp) 
->>>>>>> 86798b5fa2664757a77badd71aeaa473b56a2e77
 {
   uint8_t *kpage;
   bool success = false;
@@ -508,7 +506,7 @@ static bool setup_stack (void **esp)
         while(i > -1)
         {
             *esp = *esp - 4;
-            (*(uint32_t**)(*esp)) = arr[i];
+            (*(uint32_t**)(*esp)) = arg_ref[i];
             i--;
         }
         *esp = *esp - 4;
@@ -517,6 +515,8 @@ static bool setup_stack (void **esp)
         *(int32_t*)(*esp) = argc;
         *esp = *esp - 4;
         (*(int32_t*)(*esp)) = 0;
+        
+        //*esp = PHYS_BASE - 12;
       }
       else
         palloc_free_page (kpage);
@@ -533,7 +533,8 @@ static bool setup_stack (void **esp)
    with palloc_get_page().
    Returns true on success, false if UPAGE is already mapped or
    if memory allocation fails. */
-static bool install_page (void *upage, void *kpage, bool writable)
+static bool
+install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current ();
 

@@ -1,30 +1,49 @@
 #include "userprog/syscall.h"
+#include "userprog/process.h"
 #include <stdio.h>
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+//#include "threads/vaddr.h"
+//#include "pagedir.c"
+#include "devices/shutdown.h"
+#include "lib/user/syscall.h"
+#include "filesys/filesys.h"
+//#include <unistd.h>
+
+#define WNOHANG   0x00000001
+#define WUNTRACED 0x00000002
+#define WSTOPPED  WUNTRACED
+#define WEXITED   0x00000004
+#define WCONTINUED  0x00000008
+#define WNOWAIT   0x01000000
+
+static int (*syscall_handlers[20]) (struct intr_frame *);
 
 static void syscall_handler (struct intr_frame *);
+//need to delcare some functions here;
+/*
+void halt(void);
+void exit(int status);
+tid_t exec(const char *cmd_line);
+int wait(tid_t pid);
+bool create(const char *file, unsigned initial_size);
+bool remove (const char *file);
+int open(const char *file);
+int filesize(int fd);
+int read(int fd, void *buffer, unsigned size);*/
 
-void
-syscall_init (void) 
+int write(int fd, const void *buffer, unsigned size)
 {
-  intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+  if (fd == STDOUT_FILENO){
+    putbuf((char *)buffer, (size_t)size);
+    return (int)size;
+  }
+  return -1;
 }
 
-static void
-syscall_handler (struct intr_frame *f UNUSED) 
-{
-  printf ("system call!\n");
-  thread_exit ();
-}
-
-/*Terminates Pintos by calling shutdown_power_off() (declared in "threads/init.h").
-*This should be seldom used, because you lose some information about possible deadlock situations, etc.
-*/
-void halt(void)
-{
-
+pid_t exec(const char *file){
+  return process_execute(file);
 }
 
 /*Terminates the current user program, returning status to the kernel.
@@ -33,7 +52,72 @@ void halt(void)
 */
 void exit(int status)
 {
+//  printf("%c exit(%i)\n", , status);
+  thread_exit();
+}
 
+void
+syscall_init (void) 
+{
+  list_init(&proc_wait_list);
+  intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+  syscall_handlers[SYS_WRITE] = &write;
+}
+
+static void
+syscall_handler (struct intr_frame *f) 
+{//need to change system call numbers
+  //printf ("system call!\n");
+  int esp =*(int*)(f->esp);
+  if(esp == 0){
+    //halt();
+  }
+  else if(esp == 1){
+    int status;
+    status = *((int*)f->esp+1);
+    exit(status);
+  }
+  else if(esp == 2){
+    char *name = *(char **)(f->esp + 4);
+    exec(name);//first argument is name of executable
+  }
+  else if(esp == 3){
+    //wait(2);
+  }
+  else if(esp == 4){
+    //create(char *temp, 2);
+  }
+  else if(esp == 5){
+    //remove(char *temp );
+  }
+  else if(esp == 6){
+    //open(char *temp);
+  }
+  else if(esp == 7){
+    //filesize(2);
+  }
+  else if(esp == 8){
+    //read(2, char *temp, 2);
+  }
+  else if(esp == 9)
+  {
+    int fd = *(int *)(f->esp + 4);
+    void *buffer = *(char**)(f->esp + 8);
+    unsigned size = *(unsigned *)(f->esp + 12);
+    write(fd, buffer, size);
+  }
+  else{
+    thread_exit ();
+
+  }
+}
+/*Terminates Pintos by calling shutdown_power_off() (declared in "threads/init.h").
+*This should be seldom used, because you lose some information about possible deadlock situations, etc.
+*/
+void halt(void)
+{
+  printf("halt\n");
+  shutdown_power_off();
 }
 
 /*Runs the executable whose name is given in cmd_line, passing any given arguments,
@@ -42,10 +126,39 @@ void exit(int status)
 * it knows whether the child process successfully loaded its executable. 
 * You must use appropriate synchronization to ensure this. 
 */
-pid_t exec(const char *cmd_line)
-{
-
-}
+//tid_t exec(const char *cmd_line)
+//{
+  /*
+  int id = fork();
+  if(id < 0){
+  //errorrrrrrrr
+  }
+  else if(id == 0){//child
+  
+    //argument passing?
+    // char *name = *cmd_line->esp;
+    
+   // execvp(name,(cmd_line->esp)+1);
+    execvp(cmd_line);
+  }
+  else{//parent
+    int status;
+    int return_pid = waitpid(id, &status, WNOHANG);
+    if(return_pid < 0){//error
+      //perror("failed to execute");
+      printf("failed to execute\n");
+      exit(1);
+    }
+    else if(return_pid == 0){//still running
+      return id;
+    }
+    else if(return_pid == id){//finished running
+      return id;
+    }
+  }
+  */
+  
+//}
 
 /*Waits for a child process pid and retrieves the child's exit status.
 * If pid is still alive, waits until it terminates. Then, returns the status that pid passed to exit.
@@ -54,7 +167,7 @@ pid_t exec(const char *cmd_line)
 * have already terminated by the time the parent calls wait, but the kernel must still allow the parent to
 * retrieve its child's exit status, or learn that the child was terminated by the kernel.
 */
-int wait(pid_t pid)
+int wait(tid_t pid)
 {
 
 }
@@ -105,3 +218,15 @@ int read(int fd, void *buffer, unsigned size)
 {
 
 }
+
+/*
+* checks for pointer being equal to NULL or if address is not mapped to memory
+* Returns false if ptr is invalid and true if valid
+*/
+/*bool ptr_verification(void *ptr) {
+  struct thread *t = thread_current(); //current thread
+  if(ptr != NULL && is_user_vaddr(ptr)){ //checks if the pointer is NULL and if it is a valid address
+    if(pagedir_get_page (t->pagedir, ptr) != NULL) return true; //checks if value is mapped to memory, if it is then returns true else returns false
+  } return false;
+}
+*/
