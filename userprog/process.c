@@ -61,17 +61,10 @@ tid_t process_execute (const char *file_name)
     if (fn_copy == NULL)
         return TID_ERROR;
     strlcpy (fn_copy, file_name, PGSIZE);
-
-   /* struct semaphore sem;
-    sema_init(&sem,0);
-    int result = 0;
-    void *args[2];
-    args[0] = fn_copy;
-    args[1] = &sem;
-    args[2] = &result;
-*/
+    char actual_name[MAX_LENGTH]; 
+    get_name(file_name, actual_name);
     /* Create a new thread to execute FILE_NAME. */
-    tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+    tid = thread_create (actual_name, PRI_DEFAULT, start_process, fn_copy);
     if (tid == TID_ERROR)
         palloc_free_page (fn_copy); 
     return tid;
@@ -265,9 +258,10 @@ load (const char *file_name, void (**eip) (void), void **esp)
   off_t file_ofs;
   bool success = false;
   int i;
-
+  char exec_name[MAX_LENGTH];
   char fn_copy[MAX_LENGTH];
   strlcpy(fn_copy, file_name, MAX_LENGTH);
+  get_name(fn_copy, exec_name);
   char *argv[MAX_ARGS];
   int argc;
   get_args(fn_copy, argv, &argc);
@@ -279,7 +273,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   process_activate ();
 
   /* Open executable file. */
-  file = filesys_open (file_name);
+  file = filesys_open (exec_name);
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", file_name);
