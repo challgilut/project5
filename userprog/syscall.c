@@ -4,7 +4,7 @@
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
-//#include "threads/vaddr.h"
+#include "threads/vaddr.h"
 //#include "pagedir.c"
 #include "devices/shutdown.h"
 #include "lib/user/syscall.h"
@@ -19,6 +19,7 @@
 #define WNOWAIT   0x01000000
 
 static int (*syscall_handlers[20]) (struct intr_frame *);
+bool ptr_verification(void *ptr);
 
 static void syscall_handler (struct intr_frame *);
 //need to delcare some functions here;
@@ -69,6 +70,8 @@ static void
 syscall_handler (struct intr_frame *f) 
 {//need to change system call numbers
   //printf ("system call!\n");
+  if(!ptr_verification(f->esp))
+    exit(-1);
   int esp =*(int*)(f->esp);
   if(esp == 0){
     //halt();
@@ -224,10 +227,12 @@ int read(int fd, void *buffer, unsigned size)
 * checks for pointer being equal to NULL or if address is not mapped to memory
 * Returns false if ptr is invalid and true if valid
 */
-/*bool ptr_verification(void *ptr) {
+bool ptr_verification(void *ptr) {
   struct thread *t = thread_current(); //current thread
+  int base = PHYS_BASE;
   if(ptr != NULL && is_user_vaddr(ptr)){ //checks if the pointer is NULL and if it is a valid address
-    if(pagedir_get_page (t->pagedir, ptr) != NULL) return true; //checks if value is mapped to memory, if it is then returns true else returns false
-  } return false;
+    if(pagedir_get_page (t->pagedir, ptr) != NULL) //checks if value is mapped to memory, if it is then returns true else returns false
+      return true;
+  } 
+  return false;
 }
-*/
