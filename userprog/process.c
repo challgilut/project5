@@ -9,6 +9,7 @@
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
 #include "filesys/directory.h"
+#include "threads/intr-stubs.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
 #include "threads/flags.h"
@@ -19,6 +20,8 @@
 #include "threads/vaddr.h"
 #include "threads/synch.h"
 #include "threads/malloc.h"
+#include "threads/switch.h"
+#include "threads/thread.h"
 
 #define MAX_ARGS 30
 #define MAX_LENGTH 100
@@ -102,6 +105,14 @@ start_process (void *file_name_)
   NOT_REACHED ();
 }
 
+bool parent_of(tid_t child)
+{
+  struct thread *temp = thread_get(child);
+  if(temp == NULL || temp->parent != thread_tid())
+    return false;
+  return true;
+}
+
 /* Waits for thread TID to die and returns its exit status.  If
    it was terminated by the kernel (i.e. killed due to an
    exception), returns -1.  If TID is invalid or if it was not a
@@ -113,8 +124,10 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid) 
 {
-  //if(thread_get(child_tid) == NULL)
-  //  exit(-1);
+  //if(!parent_of(child_tid))
+   // exit(-1);
+  if(thread_get(child_tid) == NULL)
+    exit(-1);
   int value = 0;
   struct process_wait *wait = malloc(sizeof(struct process_wait));
   sema_init(&wait->sema, 0);

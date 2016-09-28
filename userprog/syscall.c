@@ -179,7 +179,9 @@ void halt(void)
 tid_t exec(const char *cmd_line)
 {
   if(strcmp(cmd_line, "") == 0 || strlen(cmd_line) == 0 || strlen(cmd_line) > PGSIZE)
+  {
     return -1;
+  }
   return process_execute(cmd_line);
 }
 
