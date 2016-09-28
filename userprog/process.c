@@ -90,7 +90,7 @@ start_process (void *file_name_)
   /* If load failed, quit. */
   palloc_free_page (file_name);
   if (!success) 
-    thread_exit ();
+    thread_exit (-1);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -113,18 +113,34 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid) 
 {
+  //if(thread_get(child_tid) == NULL)
+  //  exit(-1);
+  int value = 0;
   struct process_wait *wait = malloc(sizeof(struct process_wait));
   sema_init(&wait->sema, 0);
   wait->waiting_for = child_tid;
+  wait->status = 0;
   list_push_back(&proc_wait_list, &(wait->elem));
   sema_down(&wait->sema);
 
+/*  struct list_elem *i;
+  for (i = list_begin(&return_status_list); i != list_end(&return_status_list); i = list_next(i))
+  {
+    if (list_entry(i, struct return_status, elem)->id == child_tid){
+      struct return_status *ptr = list_entry(i, struct return_status, elem);
+      value = ptr->status;
+      list_remove(i);
+      free(ptr);
+      return value;
+    }
+  }
+*/
   return -1;
 }
 
 /* Free the current process's resources. */
 void
-process_exit (void)
+process_exit (int status)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
@@ -137,6 +153,12 @@ process_exit (void)
   }
   if (i != list_end (&proc_wait_list)){
     struct process_wait * pw = list_entry(i, struct process_wait, elem);
+
+  /*  struct return_status *temp = malloc(sizeof(struct return_status));
+    temp->id = thread_tid();
+    temp->status = status;
+    list_push_back(&return_status_list, &(temp->elem));
+*/
     sema_up (&(pw->sema));
     list_remove(i);
     free(pw);

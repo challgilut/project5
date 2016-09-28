@@ -19,16 +19,24 @@
 
 tid_t process_execute (const char *file_name);
 int process_wait (tid_t);
-void process_exit (void);
+void process_exit (int status);
 void process_activate (void);
 
 //Stuff needed for waiting
 struct process_wait{
+  int status;
   tid_t waiting_for;
   struct semaphore sema;
   struct list_elem elem;
 };
 
+struct return_status{
+	int status;
+	tid_t id;
+	struct list_elem elem;
+};
+
 struct list proc_wait_list; //List of processes being waited for;
+struct list return_status_list; //list of return status
 
 #endif /* userprog/process.h */

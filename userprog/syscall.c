@@ -26,13 +26,13 @@ static void syscall_handler (struct intr_frame *);
 /*
 void halt(void);
 void exit(int status);
-tid_t exec(const char *cmd_line);
-int wait(tid_t pid);
 bool create(const char *file, unsigned initial_size);
 bool remove (const char *file);
 int open(const char *file);
 int filesize(int fd);
 int read(int fd, void *buffer, unsigned size);*/
+int wait(tid_t pid);
+tid_t exec(const char *cmd_line);
 
 int write(int fd, const void *buffer, unsigned size)
 {
@@ -43,10 +43,6 @@ int write(int fd, const void *buffer, unsigned size)
   return -1;
 }
 
-pid_t exec(const char *file){
-  return process_execute(file);
-}
-
 /*Terminates the current user program, returning status to the kernel.
 * If the process's parent waits for it (see below), this is the status that will be returned. Conventionally, 
 * a status of 0 indicates success and nonzero values indicate errors. 
@@ -55,7 +51,7 @@ void exit(int status)
 {
  // struct thread *t = 
   printf("%s: exit(%i)\n", thread_current()->name, status);
-  thread_exit();
+  thread_exit(status);
 }
 
 /*Creates a new file called file initially initial_size bytes in size. Returns true if successful, false otherwise.
@@ -74,6 +70,7 @@ void
 syscall_init (void) 
 {
   list_init(&proc_wait_list);
+  list_init(&return_status_list);
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
   syscall_handlers[SYS_WRITE] = &write;
 }
@@ -107,11 +104,25 @@ syscall_handler (struct intr_frame *f)
     exit(status);
   }
   else if(esp == 2){
-    char *name = *(char **)(f->esp + 4);
-    exec(name);//first argument is name of executable
+    int i = 0;
+    for(; i < 4; i++)
+    {
+      if(!ptr_verification(f->esp + 4 + i))
+        exit(-1);
+    }
+    char *cmd = *(char**)(f->esp+4);
+    f->eax = exec(cmd);
   }
   else if(esp == 3){
-    //wait(2);
+    tid_t id = 0;
+    int i = 0;
+    for(; i< 4; i ++)
+    {
+      if(!ptr_verification(f->esp +4 +i))
+        exit(-1);
+    }
+    id = *((int*)f->esp + 1);
+    f->eax = wait(id);
   }
   else if(esp == 4){
     for(i = 0; i < 4; i++)
@@ -146,7 +157,7 @@ syscall_handler (struct intr_frame *f)
     write(fd, buffer, size);
   }
   else{
-    thread_exit ();
+    thread_exit (0);
 
   }
 }
@@ -165,39 +176,12 @@ void halt(void)
 * it knows whether the child process successfully loaded its executable. 
 * You must use appropriate synchronization to ensure this. 
 */
-//tid_t exec(const char *cmd_line)
-//{
-  /*
-  int id = fork();
-  if(id < 0){
-  //errorrrrrrrr
-  }
-  else if(id == 0){//child
-  
-    //argument passing?
-    // char *name = *cmd_line->esp;
-    
-   // execvp(name,(cmd_line->esp)+1);
-    execvp(cmd_line);
-  }
-  else{//parent
-    int status;
-    int return_pid = waitpid(id, &status, WNOHANG);
-    if(return_pid < 0){//error
-      //perror("failed to execute");
-      printf("failed to execute\n");
-      exit(1);
-    }
-    else if(return_pid == 0){//still running
-      return id;
-    }
-    else if(return_pid == id){//finished running
-      return id;
-    }
-  }
-  */
-  
-//}
+tid_t exec(const char *cmd_line)
+{
+  if(strcmp(cmd_line, "") == 0 || strlen(cmd_line) == 0 || strlen(cmd_line) > PGSIZE)
+    return -1;
+  return process_execute(cmd_line);
+}
 
 /*Waits for a child process pid and retrieves the child's exit status.
 * If pid is still alive, waits until it terminates. Then, returns the status that pid passed to exit.
@@ -208,7 +192,7 @@ void halt(void)
 */
 int wait(tid_t pid)
 {
-
+  return process_wait(pid);
 }
 
 /*Deletes the file called file. Returns true if successful, false otherwise.
