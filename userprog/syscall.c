@@ -64,7 +64,9 @@ void exit(int status)
 */
 bool create(const char *file, unsigned initial_size)
 {
-  
+  //if(strlen(file) > PGSIZE || strlen(file) != initial_size)
+    //return false;
+  return filesys_create(file, initial_size);
 }
 
 
@@ -122,7 +124,7 @@ syscall_handler (struct intr_frame *f)
     unsigned size = *(int *)(f->esp + 8);
     if(name == NULL || strcmp(name, "") == 0)
       exit(-1);
-    create(name, size);
+    f->eax = create(name, size);
   }
   else if(esp == 5){
     //remove(char *temp );
