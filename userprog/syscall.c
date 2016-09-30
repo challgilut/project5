@@ -83,6 +83,7 @@ void
 syscall_init (void) 
 {
   list_init(&proc_wait_list);
+  list_init(&been_waited);
   list_init(&return_status_list);
   list_init(&openFiles);
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
@@ -218,6 +219,19 @@ bool parent_of(tid_t tid){
     return true;
   }
 
+bool check_double_wait(tid_t tid)
+{
+  struct list_elem *i;
+  for (i = list_begin(&been_waited); i != list_end(&been_waited); i = list_next(i))
+  {
+    //struct process_wait *temp = list_entry(i, struct process_wait, elem);
+    if (list_entry(i, struct child_thread, elem)->tid == tid){
+      return true;
+    }
+  }
+  return false;
+}
+
 /*Waits for a child process pid and retrieves the child's exit status.
 * If pid is still alive, waits until it terminates. Then, returns the status that pid passed to exit.
 * If pid did not call exit(), but was terminated by the kernel (e.g. killed due to an exception),
@@ -227,6 +241,8 @@ bool parent_of(tid_t tid){
 */
 int wait(tid_t pid)
 {
+  if(check_double_wait(pid))
+    return -1;
   if(!parent_of(pid))
     exit(-1);
   int value = 0;

@@ -7,6 +7,7 @@
 #include <string.h>
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
+#include "userprog/syscall.h"
 #include "userprog/tss.h"
 #include "filesys/directory.h"
 #include "threads/intr-stubs.h"
@@ -125,6 +126,9 @@ process_wait (tid_t child_tid)
   wait->waiting_for = child_tid;
   wait->status = 0;
   list_push_back(&proc_wait_list, &(wait->elem));
+  struct child_thread *child = malloc(sizeof(struct child_thread));
+  child->tid = child_tid;
+  list_push_back(&been_waited, &(child->elem));
   sema_down(&wait->sema);
 
   struct list_elem *i;
@@ -157,17 +161,15 @@ process_exit (int status)
   }
   if (i != list_end (&proc_wait_list)){
     struct process_wait * pw = list_entry(i, struct process_wait, elem);
-
-    struct return_status *temp = malloc(sizeof(struct return_status));
-    temp->id = thread_tid();
-    temp->status = status;
-    list_push_back(&return_status_list, &(temp->elem));
-
     sema_up (&(pw->sema));
     list_remove(i);
     free(pw);
   }
 
+  struct return_status *temp = malloc(sizeof(struct return_status));
+  temp->id = thread_tid();
+  temp->status = status;
+  list_push_back(&return_status_list, &(temp->elem));
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;

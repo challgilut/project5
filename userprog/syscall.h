@@ -3,4 +3,6 @@
 
 void syscall_init (void);
 
+struct list been_waited;
+
 #endif /* userprog/syscall.h */
