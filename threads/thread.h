@@ -101,11 +101,12 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
-    tid_t parent;
+    
 #endif
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
+    tid_t parent;
   };
 
 /* If false (default), use round-robin scheduler.
@@ -144,6 +145,6 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
-struct thread *thread_get(tid_t id);
+struct thread *thread_get(tid_t tid);
 
 #endif /* threads/thread.h */

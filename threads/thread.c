@@ -100,16 +100,25 @@ thread_init (void)
   initial_thread->tid = allocate_tid ();
 }
 
-struct thread* thread_get(tid_t id)
-{
-  struct list_elem *i;
-  for (i = list_begin(&all_list); i != list_end(&all_list); i = list_next(i))
+struct thread *thread_get(tid_t tid)
   {
-    if (list_entry(i, struct thread, elem)->tid == id){
-      return list_entry(i, struct thread, elem);
-    }
-  } 
-}
+    struct list_elem *e;
+    struct thread * dest_thread = NULL;
+    enum intr_level old_level;
+
+    old_level = intr_disable ();
+    for (e = list_begin (&all_list); e != list_end (&all_list);
+         e = list_next (e))
+      {
+        struct thread *t = list_entry (e, struct thread, allelem);
+        if (tid == t->tid){
+          dest_thread = t;
+          break;
+        }
+      }
+    intr_set_level (old_level);
+    return dest_thread;
+  }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
    Also creates the idle thread. */
@@ -190,7 +199,9 @@ thread_create (const char *name, int priority,
     return TID_ERROR;
 
   /* Initialize thread. */
-  init_thread (t, name, priority, thread_tid());
+  tid_t *temp = malloc(sizeof(tid_t));
+  *temp = thread_tid;
+  init_thread (t, name, priority, *temp);
   tid = t->tid = allocate_tid ();
 
   /* Stack frame for kernel_thread(). */

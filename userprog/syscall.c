@@ -5,6 +5,7 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/synch.h"
 //#include "pagedir.c"
 #include "devices/shutdown.h"
 #include "lib/user/syscall.h"
@@ -18,6 +19,18 @@
 #define WCONTINUED  0x00000008
 #define WNOWAIT   0x01000000
 
+
+struct file_descriptor{
+  int fd_num;
+  tid_t owner;
+  struct file *file_struct;
+  struct list_elem elem;
+};
+
+struct list openFiles;
+struct file_descriptor *getOpenFile(int fd);
+struct semaphore sema;
+
 static int (*syscall_handlers[20]) (struct intr_frame *);
 bool ptr_verification(void *ptr);
 
@@ -28,11 +41,11 @@ void halt(void);
 void exit(int status);
 bool create(const char *file, unsigned initial_size);
 bool remove (const char *file);
-int open(const char *file);
 int filesize(int fd);
 int read(int fd, void *buffer, unsigned size);*/
 int wait(tid_t pid);
 tid_t exec(const char *cmd_line);
+int open(const char *file);
 
 int write(int fd, const void *buffer, unsigned size)
 {
@@ -71,8 +84,10 @@ syscall_init (void)
 {
   list_init(&proc_wait_list);
   list_init(&return_status_list);
+  list_init(&openFiles);
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
   syscall_handlers[SYS_WRITE] = &write;
+  sema_init(&sema,1);
 }
 
 static void
@@ -141,10 +156,19 @@ syscall_handler (struct intr_frame *f)
     //remove(char *temp );
   }
   else if(esp == 6){
-    //open(char *temp);
+    for(; i < 4; i ++)
+    {
+      if(!ptr_verification(f->esp + 4 + i))
+        exit(-1);
+    }
+    char *name = *(char **)(f->esp + 4); 
+    if(name == NULL)
+      exit(-1);
+    f->eax = open(name);
   }
   else if(esp == 7){
-    //filesize(2);
+    int fd = *(int *)(f->esp + 4);
+    f->eax = filesize(fd);
   }
   else if(esp == 8){
     //read(2, char *temp, 2);
@@ -185,6 +209,15 @@ tid_t exec(const char *cmd_line)
   return process_execute(cmd_line);
 }
 
+
+bool parent_of(tid_t tid){
+    struct thread *t = thread_get(tid);
+    if(t == NULL || t->parent != thread_tid()){
+      return false;
+    }
+    return true;
+  }
+
 /*Waits for a child process pid and retrieves the child's exit status.
 * If pid is still alive, waits until it terminates. Then, returns the status that pid passed to exit.
 * If pid did not call exit(), but was terminated by the kernel (e.g. killed due to an exception),
@@ -194,6 +227,9 @@ tid_t exec(const char *cmd_line)
 */
 int wait(tid_t pid)
 {
+  if(!parent_of(pid))
+    exit(-1);
+  int value = 0;
   return process_wait(pid);
 }
 
@@ -206,6 +242,24 @@ bool remove (const char *file)
 
 }
 
+
+int setfd_num(){
+  static int current_fd = 1;
+  return ++current_fd;
+}
+
+struct file_descriptor *getOpenFile(int fd){
+  struct list_elem *e;
+  struct file_descriptor *fd_struct;
+  e = list_tail(&openFiles);
+  while((e = list_prev(e)) != list_head(&openFiles)){
+    fd_struct = list_entry (e,struct file_descriptor, elem);
+    if(fd_struct-> fd_num == fd)
+      return fd_struct;
+  }
+  return NULL;
+}
+
 /*Opens the file called file. Returns a nonnegative integer handle called a "file descriptor" (fd), or -1 if the file could
 * not be opened. File descriptors numbered 0 and 1 are reserved for the console: fd 0 (STDIN_FILENO) is standard input,
 * fd 1 (STDOUT_FILENO) is standard output. The open system call will never return either of these file descriptors,
@@ -215,15 +269,39 @@ bool remove (const char *file)
 * a new file descriptor. Different file descriptors for a single file are closed independently in separate calls to close
 * and they do not share a file position.
 */
-int open(const char *file)
+int open(const char *name)
 {
+  if(!ptr_verification(name))
+    exit(-1);
 
+  sema_down(&sema);
+  struct file *file = filesys_open(name); 
+
+  if(file != NULL){
+    struct file_descriptor *file_descriptor = malloc(sizeof(struct file_descriptor));
+    file_descriptor->fd_num = setfd_num();
+    file_descriptor->owner = thread_current()->tid;
+    file_descriptor->file_struct = file;
+    list_push_back(&openFiles,&file_descriptor->elem);
+    sema_up(&sema);
+    return file_descriptor->fd_num;
+  }
+  sema_up(&sema);
+  return (-1);
 }
    
 //Returns the size, in bytes, of the file open as fd.
 int filesize(int fd)
 {
-
+  sema_down(&sema);
+  struct file *file = getOpenFile(fd);
+  if(file != NULL){
+    int filesize = file_length(file);
+    sema_up(&sema);
+    return filesize;
+  } 
+  sema_up(&sema);
+  return (-1);
 }
  
 /*    Reads size bytes from the file open as fd into buffer. Returns the number of bytes actually read (0 at end of file),

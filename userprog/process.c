@@ -69,7 +69,9 @@ tid_t process_execute (const char *file_name)
     /* Create a new thread to execute FILE_NAME. */
     tid = thread_create (actual_name, PRI_DEFAULT, start_process, fn_copy);
     if (tid == TID_ERROR)
-        palloc_free_page (fn_copy); 
+        palloc_free_page (fn_copy);
+    struct thread *t = thread_get(tid);
+    t->parent = thread_tid();
     return tid;
     
 }
@@ -105,13 +107,6 @@ start_process (void *file_name_)
   NOT_REACHED ();
 }
 
-bool parent_of(tid_t child)
-{
-  struct thread *temp = thread_get(child);
-  if(temp == NULL || temp->parent != thread_tid())
-    return false;
-  return true;
-}
 
 /* Waits for thread TID to die and returns its exit status.  If
    it was terminated by the kernel (i.e. killed due to an
@@ -124,11 +119,7 @@ bool parent_of(tid_t child)
 int
 process_wait (tid_t child_tid) 
 {
-  //if(!parent_of(child_tid))
-   // exit(-1);
-  if(thread_get(child_tid) == NULL)
-    exit(-1);
-  int value = 0;
+  
   struct process_wait *wait = malloc(sizeof(struct process_wait));
   sema_init(&wait->sema, 0);
   wait->waiting_for = child_tid;
@@ -136,18 +127,18 @@ process_wait (tid_t child_tid)
   list_push_back(&proc_wait_list, &(wait->elem));
   sema_down(&wait->sema);
 
-/*  struct list_elem *i;
+  struct list_elem *i;
   for (i = list_begin(&return_status_list); i != list_end(&return_status_list); i = list_next(i))
   {
-    if (list_entry(i, struct return_status, elem)->id == child_tid){
-      struct return_status *ptr = list_entry(i, struct return_status, elem);
-      value = ptr->status;
+    struct return_status *rs = list_entry (i, struct return_status, elem);
+    if(rs->id == child_tid){
       list_remove(i);
-      free(ptr);
+      int value = rs->status;
+      free(rs);
       return value;
     }
   }
-*/
+
   return -1;
 }
 
@@ -167,11 +158,11 @@ process_exit (int status)
   if (i != list_end (&proc_wait_list)){
     struct process_wait * pw = list_entry(i, struct process_wait, elem);
 
-  /*  struct return_status *temp = malloc(sizeof(struct return_status));
+    struct return_status *temp = malloc(sizeof(struct return_status));
     temp->id = thread_tid();
     temp->status = status;
     list_push_back(&return_status_list, &(temp->elem));
-*/
+
     sema_up (&(pw->sema));
     list_remove(i);
     free(pw);
@@ -311,9 +302,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
   file = filesys_open (exec_name);
   if (file == NULL) 
     {
-      //printf ("load: %s: open failed\n", file_name);
-      //goto done; 
-      exit(-1);
+      printf ("load: %s: open failed\n", file_name);
+      goto done; 
     }
 
   /* Read and verify executable header. */
@@ -325,8 +315,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
       || ehdr.e_phentsize != sizeof (struct Elf32_Phdr)
       || ehdr.e_phnum > 1024) 
     {
-      //printf ("load: %s: error loading executable\n", file_name);
-      exit(-1);
+      printf ("load: %s: error loading executable\n", file_name);
       goto done; 
     }
 
