@@ -41,20 +41,13 @@ void halt(void);
 void exit(int status);
 bool create(const char *file, unsigned initial_size);
 bool remove (const char *file);
-int filesize(int fd);
-int read(int fd, void *buffer, unsigned size);*/
+int filesize(int fd);*/
+int read(int fd, void *buffer, unsigned size);
+void close(int fd);
 int wait(tid_t pid);
 tid_t exec(const char *cmd_line);
 int open(const char *file);
-
-int write(int fd, const void *buffer, unsigned size)
-{
-  if (fd == STDOUT_FILENO){
-    putbuf((char *)buffer, (size_t)size);
-    return (int)size;
-  }
-  return -1;
-}
+int write(int fd, const void *buffer, unsigned size);
 
 /*Terminates the current user program, returning status to the kernel.
 * If the process's parent waits for it (see below), this is the status that will be returned. Conventionally, 
@@ -73,8 +66,6 @@ void exit(int status)
 */
 bool create(const char *file, unsigned initial_size)
 {
-  //if(strlen(file) > PGSIZE || strlen(file) != initial_size)
-    //return false;
   return filesys_create(file, initial_size);
 }
 
@@ -149,7 +140,7 @@ syscall_handler (struct intr_frame *f)
     }
     char *name = *(char **)(f->esp + 4);
     unsigned size = *(int *)(f->esp + 8);
-    if(name == NULL || strcmp(name, "") == 0)
+    if(name == NULL || strcmp(name, "") == 0 || !ptr_verification(name))
       exit(-1);
     f->eax = create(name, size);
   }
@@ -168,18 +159,55 @@ syscall_handler (struct intr_frame *f)
     f->eax = open(name);
   }
   else if(esp == 7){
+    int i = 0;
+    for(; i < 4; i++)
+    {
+      if (!ptr_verification(f->esp +4 + i))
+        exit(-1);
+    }
     int fd = *(int *)(f->esp + 4);
     f->eax = filesize(fd);
   }
   else if(esp == 8){
-    //read(2, char *temp, 2);
-  }
-  else if(esp == 9)
-  {
+    int i = 0;
+    for(; i < 12; i ++)
+    {
+      if (!ptr_verification(f->esp + 4 + i))
+        exit(-1);
+    }
     int fd = *(int *)(f->esp + 4);
     void *buffer = *(char**)(f->esp + 8);
     unsigned size = *(unsigned *)(f->esp + 12);
-    write(fd, buffer, size);
+    if (!ptr_verification(buffer) || !ptr_verification(buffer + size))
+      exit(-1);
+    f->eax = read(fd, buffer, size);
+  }
+  else if(esp == 9)
+  {
+    int i = 0;
+    for(; i < 12; i++)
+    {
+      if (!ptr_verification(f->esp + 4 + i))
+        exit(-1);
+    }
+    int fd = *(int *)(f->esp + 4);
+    void *buffer = *(char**)(f->esp + 8);
+    unsigned size = *(unsigned *)(f->esp + 12);
+    if (!ptr_verification(buffer) || !ptr_verification(buffer + size)){
+      exit(-1);
+    }
+    f->eax = write(fd, buffer, size);
+  }
+  else if(esp == 12)
+  {
+    int i = 0;
+    for(; i < 4; i ++)
+    {
+      if (!ptr_verification(f->esp +4 + i))
+        exit(-1);
+    }
+    int fd = *(int *)(f->esp + 4);
+    close(fd);
   }
   else{
     thread_exit (0);
@@ -309,24 +337,10 @@ int open(const char *name)
 //Returns the size, in bytes, of the file open as fd.
 int filesize(int fd)
 {
-  sema_down(&sema);
-  struct file *file = getOpenFile(fd);
-  if(file != NULL){
-    int filesize = file_length(file);
-    sema_up(&sema);
-    return filesize;
-  } 
-  sema_up(&sema);
-  return (-1);
-}
- 
-/*    Reads size bytes from the file open as fd into buffer. Returns the number of bytes actually read (0 at end of file),
-* or -1 if the file could not be read (due to a condition other than end of file).
-* Fd 0 reads from the keyboard using input_getc(). 
-*/
-int read(int fd, void *buffer, unsigned size)
-{
-
+  if (getOpenFile(fd) != NULL){
+    return file_length(getOpenFile(fd)->file_struct);
+  }
+  return -1;
 }
 
 /*
@@ -341,4 +355,39 @@ bool ptr_verification(void *ptr) {
       return true;
   } 
   return false;
+}
+
+
+void close(int fd)
+{
+  struct file_descriptor *temp = getOpenFile(fd);
+  if(temp == NULL)
+    exit(-1);
+  file_close(temp->file_struct);
+  list_remove(&temp->elem);
+  free(temp);  
+}
+
+int write(int fd, const void *buffer, unsigned size)
+{
+  if (fd == STDOUT_FILENO){
+    putbuf((char *)buffer, (size_t)size);
+    return (int)size;
+  }
+  else if (getOpenFile(fd) != NULL){
+    return (int)file_write(getOpenFile(fd)->file_struct, buffer, size);
+  }
+  return -1;
+}
+
+/*    Reads size bytes from the file open as fd into buffer. Returns the number of bytes actually read (0 at end of file),
+* or -1 if the file could not be read (due to a condition other than end of file).
+* Fd 0 reads from the keyboard using input_getc(). 
+*/
+int read(int fd, void *buffer, unsigned size)
+{
+  if (getOpenFile(fd) != NULL){
+    return file_read(getOpenFile(fd)->file_struct, buffer, size);
+  }
+  return -1;
 }
