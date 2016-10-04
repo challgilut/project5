@@ -261,10 +261,8 @@ void halt(void)
 
 void seek (int fd, unsigned position){
   if (getOpenFile(fd) != NULL){
-    struct file_descriptor *fd = getOpenFile(fd);
-    lock_acquire(&lock);
-    file_seek(fd->file_struct, position);
-    lock_release(&lock);
+    struct file_descriptor *temp = getOpenFile(fd);
+    file_seek(temp->file_struct, position);
   }
 }
 
@@ -441,7 +439,6 @@ int write(int fd, const void *buffer, unsigned size)
     return (int)size;
   }
   else if (getOpenFile(fd) != NULL){
-    if(getOpenFile(fd)->file_struct->inode)
     lock_acquire(&lock);
     int write = (int)file_write(getOpenFile(fd)->file_struct, buffer, size);
     lock_release(&lock);
