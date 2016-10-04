@@ -88,6 +88,7 @@ syscall_init (void)
   syscall_handlers[SYS_WRITE] = &write;
   sema_init(&sema,1);
   lock_init(&lock);
+  lock_init(&exec_lock);
 }
 
 static void
@@ -285,7 +286,6 @@ tid_t exec(const char *cmd_line)
   struct semaphore sema;
   sema_init(&sema, 0);
   tid_t value = process_execute(cmd_line);
-//  sema_down(&sema);
   return value;
 }
 
@@ -325,7 +325,10 @@ int wait(tid_t pid)
   if(!parent_of(pid))
     exit(-1);
   int value = 0;
-  return process_wait(pid);
+  value = process_wait(pid);
+  struct thread *temp = thread_get(pid);
+  sema_up(&temp->sema);
+  return value;;
 }
 
 /*Deletes the file called file. Returns true if successful, false otherwise.
@@ -353,6 +356,18 @@ struct file_descriptor *getOpenFile(int fd){
   while((e = list_prev(e)) != list_head(&openFiles)){
     fd_struct = list_entry (e,struct file_descriptor, elem);
     if(fd_struct-> fd_num == fd)
+      return fd_struct;
+  }
+  return NULL;
+}
+
+struct file_descriptor *getOpenFileTid(int fd, tid_t tid){
+  struct list_elem *e;
+  struct file_descriptor *fd_struct;
+  e = list_tail(&openFiles);
+  while((e = list_prev(e)) != list_head(&openFiles)){
+    fd_struct = list_entry (e,struct file_descriptor, elem);
+    if(fd_struct->fd_num == fd && fd_struct->owner == tid)
       return fd_struct;
   }
   return NULL;
@@ -428,7 +443,7 @@ bool ptr_verification(void *ptr) {
 
 void close(int fd)
 {
-  struct file_descriptor *temp = getOpenFile(fd);
+  struct file_descriptor *temp = getOpenFileTid(fd, thread_current()->tid);
   if(temp == NULL)
     exit(-1);
   lock_acquire(&lock);

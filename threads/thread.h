@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "synch.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -13,7 +14,6 @@ enum thread_status
     THREAD_BLOCKED,     /* Waiting for an event to trigger. */
     THREAD_DYING        /* About to be destroyed. */
   };
-
 /* Thread identifier type.
    You can redefine this to whatever type you like. */
 typedef int tid_t;
@@ -108,6 +108,7 @@ struct thread
     unsigned magic;                     /* Detects stack overflow. */
     tid_t parent;
     struct file *source;
+    struct semaphore sema;
   };
 
 /* If false (default), use round-robin scheduler.

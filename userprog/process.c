@@ -67,6 +67,11 @@ tid_t process_execute (const char *file_name)
     strlcpy (fn_copy, file_name, PGSIZE);
     char actual_name[MAX_LENGTH]; 
     get_name(file_name, actual_name);
+    lock_acquire(&lock);
+    struct file *temp = filesys_open(actual_name);
+    lock_release(&lock);
+    if(temp == NULL)
+      return -1;
     /* Create a new thread to execute FILE_NAME. */
     tid = thread_create (actual_name, PRI_DEFAULT, start_process, fn_copy);
     if (tid == TID_ERROR)
@@ -180,9 +185,9 @@ process_exit (int status)
   temp->id = thread_tid();
   temp->status = status;
   list_push_back(&return_status_list, &(temp->elem));
-
-  lock_acquire(&lock);
   file_close(cur->source);
+  sema_down(&thread_current()->sema);
+  lock_acquire(&lock);
   lock_release(&lock);
 
   /* Destroy the current process's page directory and switch back

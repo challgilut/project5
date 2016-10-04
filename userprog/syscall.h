@@ -7,4 +7,6 @@ struct list been_waited;
 
 struct lock lock;
 
+struct lock exec_lock;
+
 #endif /* userprog/syscall.h */
