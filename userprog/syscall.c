@@ -68,6 +68,8 @@ void exit(int status)
 */
 bool create(const char *file, unsigned initial_size)
 {
+  if(!ptr_verification(file))
+    exit(-1);
   lock_acquire(&lock);
   bool created = filesys_create(file, initial_size);
   lock_release(&lock);
@@ -384,9 +386,9 @@ int open(const char *name)
 unsigned tell(int fd)
 {
   if (getOpenFile(fd) != NULL){
-    struct file_descriptor *fd = getOpenFile(fd);
+    struct file_descriptor *temp = getOpenFile(fd);
     lock_acquire(&lock);
-    unsigned value = file_tell(fd->file_struct);
+    unsigned value = file_tell(temp->file_struct);
     lock_release(&lock);
     return value;
   }
@@ -440,9 +442,9 @@ int write(int fd, const void *buffer, unsigned size)
   }
   else if (getOpenFile(fd) != NULL){
     lock_acquire(&lock);
-    int write = (int)file_write(getOpenFile(fd)->file_struct, buffer, size);
+    int value = (int)file_write(getOpenFile(fd)->file_struct, buffer, size);
     lock_release(&lock);
-    return write;
+    return value;
   }
   return -1;
 }

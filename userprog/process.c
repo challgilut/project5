@@ -170,6 +170,11 @@ process_exit (int status)
   temp->id = thread_tid();
   temp->status = status;
   list_push_back(&return_status_list, &(temp->elem));
+
+  lock_acquire(&lock);
+  file_close(cur->source);
+  lock_release(&lock);
+
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -308,6 +313,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
       goto done; 
     }
     file_deny_write(file);
+    t->source = file;
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
       || memcmp (ehdr.e_ident, "\177ELF\1\1\1", 7)
