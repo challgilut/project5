@@ -6,11 +6,11 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "threads/synch.h"
-//#include "pagedir.c"
+#include "filesys/file.h"
 #include "devices/shutdown.h"
 #include "lib/user/syscall.h"
 #include "filesys/filesys.h"
-//#include <unistd.h>
+//#include "filesys/"
 
 #define WNOHANG   0x00000001
 #define WUNTRACED 0x00000002
@@ -40,14 +40,16 @@ static void syscall_handler (struct intr_frame *);
 void halt(void);
 void exit(int status);
 bool create(const char *file, unsigned initial_size);
-bool remove (const char *file);
 int filesize(int fd);*/
+bool remove (const char *file);
 int read(int fd, void *buffer, unsigned size);
 void close(int fd);
 int wait(tid_t pid);
 tid_t exec(const char *cmd_line);
 int open(const char *file);
 int write(int fd, const void *buffer, unsigned size);
+void seek(int fd, unsigned position);
+unsigned tell(int fd);
 
 /*Terminates the current user program, returning status to the kernel.
 * If the process's parent waits for it (see below), this is the status that will be returned. Conventionally, 
@@ -66,7 +68,10 @@ void exit(int status)
 */
 bool create(const char *file, unsigned initial_size)
 {
-  return filesys_create(file, initial_size);
+  lock_acquire(&lock);
+  bool created = filesys_create(file, initial_size);
+  lock_release(&lock);
+  return created;
 }
 
 
@@ -80,6 +85,7 @@ syscall_init (void)
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
   syscall_handlers[SYS_WRITE] = &write;
   sema_init(&sema,1);
+  lock_init(&lock);
 }
 
 static void
@@ -145,7 +151,14 @@ syscall_handler (struct intr_frame *f)
     f->eax = create(name, size);
   }
   else if(esp == 5){
-    //remove(char *temp );
+    int i = 0;
+    for(; i< 4; i ++)
+    {
+      if (!ptr_verification(f->esp +4 + i))
+        exit(-1);
+    }
+    char *str = *(char **)(f->esp + 4);
+    f->eax = remove(str);
   }
   else if(esp == 6){
     for(; i < 4; i ++)
@@ -198,6 +211,29 @@ syscall_handler (struct intr_frame *f)
     }
     f->eax = write(fd, buffer, size);
   }
+  else if(esp == 10)
+  {
+    int i = 0;
+    for(; i< 8; i ++)
+    {
+      if (!ptr_verification(f->esp +4 + i))
+        exit(-1);
+    }
+    int fd = *(int *)(f->esp + 4);
+    unsigned pos = *(unsigned *)(f->esp + 8);
+    seek(fd, pos);
+  }
+  else if(esp == 11)
+  {
+    int i = 0;
+    for(; i < 4; i ++)
+    {
+      if (!ptr_verification(f->esp + 4 + i))
+        exit(-1);
+    }
+    int fd = *(int *)(f->esp + 4);
+    f->eax = tell(fd);
+  }
   else if(esp == 12)
   {
     int i = 0;
@@ -223,6 +259,15 @@ void halt(void)
   shutdown_power_off();
 }
 
+void seek (int fd, unsigned position){
+  if (getOpenFile(fd) != NULL){
+    struct file_descriptor *fd = getOpenFile(fd);
+    lock_acquire(&lock);
+    file_seek(fd->file_struct, position);
+    lock_release(&lock);
+  }
+}
+
 /*Runs the executable whose name is given in cmd_line, passing any given arguments,
 * and returns the new process's program id (pid). Must return pid -1, which otherwise should not be a valid pid,
 * if the program cannot load or run for any reason. Thus, the parent process cannot return from the exec until
@@ -231,6 +276,8 @@ void halt(void)
 */
 tid_t exec(const char *cmd_line)
 {
+  if(!ptr_verification(cmd_line))
+    exit(-1);
   if(strcmp(cmd_line, "") == 0 || strlen(cmd_line) == 0 || strlen(cmd_line) > PGSIZE)
   {
     return -1;
@@ -283,7 +330,10 @@ int wait(tid_t pid)
 */
 bool remove (const char *file)
 {
-
+  lock_acquire(&lock);
+  bool value = filesys_remove (file);
+  lock_release(&lock);
+  return value;
 }
 
 
@@ -315,11 +365,12 @@ struct file_descriptor *getOpenFile(int fd){
 */
 int open(const char *name)
 {
-  if(!ptr_verification(name))
+ if(!ptr_verification(name))
     exit(-1);
 
-  sema_down(&sema);
+  lock_acquire(&lock);
   struct file *file = filesys_open(name); 
+  lock_release(&lock);
 
   if(file != NULL){
     struct file_descriptor *file_descriptor = malloc(sizeof(struct file_descriptor));
@@ -327,18 +378,31 @@ int open(const char *name)
     file_descriptor->owner = thread_current()->tid;
     file_descriptor->file_struct = file;
     list_push_back(&openFiles,&file_descriptor->elem);
-    sema_up(&sema);
     return file_descriptor->fd_num;
   }
-  sema_up(&sema);
   return (-1);
+}
+
+unsigned tell(int fd)
+{
+  if (getOpenFile(fd) != NULL){
+    struct file_descriptor *fd = getOpenFile(fd);
+    lock_acquire(&lock);
+    unsigned value = file_tell(fd->file_struct);
+    lock_release(&lock);
+    return value;
+  }
+  return -1;
 }
    
 //Returns the size, in bytes, of the file open as fd.
 int filesize(int fd)
 {
   if (getOpenFile(fd) != NULL){
-    return file_length(getOpenFile(fd)->file_struct);
+    lock_acquire(&lock);
+    int value = file_length(getOpenFile(fd)->file_struct);
+    lock_release(&lock);
+    return value;
   }
   return -1;
 }
@@ -363,19 +427,25 @@ void close(int fd)
   struct file_descriptor *temp = getOpenFile(fd);
   if(temp == NULL)
     exit(-1);
+  lock_acquire(&lock);
   file_close(temp->file_struct);
+  lock_release(&lock);
   list_remove(&temp->elem);
   free(temp);  
 }
 
 int write(int fd, const void *buffer, unsigned size)
 {
-  if (fd == STDOUT_FILENO){
+   if (fd == STDOUT_FILENO){
     putbuf((char *)buffer, (size_t)size);
     return (int)size;
   }
   else if (getOpenFile(fd) != NULL){
-    return (int)file_write(getOpenFile(fd)->file_struct, buffer, size);
+    if(getOpenFile(fd)->file_struct->inode)
+    lock_acquire(&lock);
+    int write = (int)file_write(getOpenFile(fd)->file_struct, buffer, size);
+    lock_release(&lock);
+    return write;
   }
   return -1;
 }
@@ -386,8 +456,11 @@ int write(int fd, const void *buffer, unsigned size)
 */
 int read(int fd, void *buffer, unsigned size)
 {
-  if (getOpenFile(fd) != NULL){
-    return file_read(getOpenFile(fd)->file_struct, buffer, size);
+   if (getOpenFile(fd) != NULL){
+    lock_acquire(&lock);
+    int read = file_read(getOpenFile(fd)->file_struct, buffer, size);
+    lock_release(&lock);
+    return read;
   }
   return -1;
 }

@@ -301,7 +301,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
   process_activate ();
 
   /* Open executable file. */
+  lock_acquire(&lock);
   file = filesys_open (exec_name);
+  lock_release(&lock);
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", file_name);
