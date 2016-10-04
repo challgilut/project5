@@ -282,7 +282,11 @@ tid_t exec(const char *cmd_line)
   {
     return -1;
   }
-  return process_execute(cmd_line);
+  struct semaphore sema;
+  sema_init(&sema, 0);
+  tid_t value = process_execute(cmd_line);
+//  sema_down(&sema);
+  return value;
 }
 
 

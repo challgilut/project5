@@ -120,7 +120,18 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid) 
 {
-  
+  struct list_elem *i;
+  for (i = list_begin(&return_status_list); i != list_end(&return_status_list); i = list_next(i))
+  {
+    struct return_status *rs = list_entry (i, struct return_status, elem);
+    if(rs->id == child_tid){
+      list_remove(i);
+      int value = rs->status;
+      free(rs);
+      return value;
+    }
+  }
+
   struct process_wait *wait = malloc(sizeof(struct process_wait));
   sema_init(&wait->sema, 0);
   wait->waiting_for = child_tid;
@@ -131,7 +142,6 @@ process_wait (tid_t child_tid)
   list_push_back(&been_waited, &(child->elem));
   sema_down(&wait->sema);
 
-  struct list_elem *i;
   for (i = list_begin(&return_status_list); i != list_end(&return_status_list); i = list_next(i))
   {
     struct return_status *rs = list_entry (i, struct return_status, elem);
